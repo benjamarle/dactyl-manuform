@@ -22,13 +22,14 @@
 (def centercol 4)                       ; controls left-right tilt / tenting (higher number is more tenting)
 (def tenting-angle (/ π 12))            ; or, change this for more precise tenting control
 
-(def pinky-15u true)                   ; controls whether the outer column uses 1.5u keys
+(def pinky-15u false)                   ; controls whether the outer column uses 1.5u keys
 (def first-15u-row 0)                   ; controls which should be the first row to have 1.5u keys on the outer column
 (def last-15u-row 3)                    ; controls which should be the last row to have 1.5u keys on the outer column
 
 (def extra-row true)                   ; adds an extra bottom row to the outer columns
 (def inner-column true)                ; adds an extra inner column (two less rows than nrows)
-(def thumb-style "cf")                ; toggles between "default", "mini", and "cf" thumb cluster
+(def thumb-style "default")                ; toggles between "default", "mini", and "cf" thumb cluster
+(def removable-usb-support? true)
 
 (def column-style :standard)
 
@@ -168,7 +169,6 @@
                    (->> key-cap
                         (translate [0 0 (+ 5 plate-thickness)])
                         (color [240/255 223/255 175/255 1])))})
-
 ;; Fill the keyholes instead of placing a a keycap over them
 (def keyhole-fill (->> (cube keyswitch-height keyswitch-width plate-thickness)
                        (translate [0 0 (/ plate-thickness 2)])))
@@ -968,6 +968,94 @@
   (def thumbcaps-type minithumbcaps)
   (def thumbcaps-fill-type minithumbcaps-fill))
 
+
+;;;;;;;;;;;;;;;;;
+;; Oled screen ;;
+;;;;;;;;;;;;;;;;;
+
+(def oled-extra-x 7)
+(def oled-extra-y 7)
+(def oled-top-bevel 5.5)
+(def oled-bottom-bevel 8.5)
+(def oled-thickness 2)
+(def oled-dimension (list  25 27))
+(def oled-support-dimension (map + (list oled-extra-x oled-extra-y) oled-dimension) )
+(def oled-z-offset -14)
+(defn idem [obj] obj)
+(defn oled-place [shape]
+  (def position (key-position 0 cornerrow [0 0 oled-z-offset]))
+  (->> shape 
+      (rotate (deg2rad 55) [0 0 -1])
+      (rotate (deg2rad 60) [1 -1 0])
+      (translate position)
+  )
+)
+(def oled-screw-position (list 10.25 11.50))
+(def oled-screw-height 5)
+(def oled-screw-diameter 2.5)
+(defn abs [n] (max n (- n)))
+
+(defn oled-screws-gen [diameter height z-offset]
+  (def oled-screw-tr (translate [(first oled-screw-position) (second oled-screw-position) (+ z-offset (/ height 2))] (with-fn 100 (cylinder (/ diameter 2) (abs height)))))
+  (def oled-screw-tl (mirror [1 0 0] oled-screw-tr))
+  (def oled-screw-br (mirror [0 1 0] oled-screw-tr))
+  (def oled-screw-bl (mirror [1 0 0] oled-screw-br))
+  (union oled-screw-tr oled-screw-tl oled-screw-br oled-screw-bl )   
+)
+(def oled-screws (oled-screws-gen oled-screw-diameter (- oled-screw-height) 0))
+
+(def oled-hole (translate [0 (/ (- oled-bottom-bevel oled-top-bevel) 2) 0] 
+                          (cube  (first oled-dimension) (- (second oled-dimension) (+ oled-top-bevel oled-bottom-bevel)) (inc oled-thickness))))
+
+(def oled-square (square (first oled-dimension) (- (second oled-dimension) (+ oled-top-bevel oled-bottom-bevel))))
+(def oled-hole 
+                 
+    (union (extrude-linear {:height (* 2 oled-thickness) :center true} oled-square)
+    (translate [0 0 0.8] (extrude-linear {:height (inc oled-thickness) :twist 0 :convexity 0 :scale 2 :center false} 
+                    oled-square)))
+)
+
+
+(def oled-frame-fill (union (->> 
+            (cube (first oled-support-dimension) (second oled-support-dimension) oled-thickness)
+         (translate [0 0 (/ 2 oled-thickness)])
+          )
+      oled-screws
+
+    ))
+
+
+(def oled-frame 
+    (difference oled-frame-fill 
+    oled-hole
+))
+
+(def web-post-oled (->> (cube oled-thickness oled-thickness oled-thickness)
+                   (translate [0 0 (/ oled-thickness 2)])))
+(def oled-post-adj (/ oled-thickness 2))
+
+  (def web-post-oled-tr (translate [(- (/ (first oled-support-dimension) 2) oled-post-adj)  (- (/ (second oled-support-dimension) 2) oled-post-adj) 0] web-post-oled))
+  (def web-post-oled-tl (mirror [1 0 0] web-post-oled-tr))
+  (def web-post-oled-br (mirror [0 1 0] web-post-oled-tr))
+  (def web-post-oled-bl (mirror [1 0 0] web-post-oled-br))
+
+
+  (def oled (oled-place (union oled-frame  web-post-oled-tr web-post-oled-tl web-post-oled-bl web-post-oled-br)))
+(def oled-fill (oled-place oled-frame-fill))
+
+
+(def oled-pcb-height 1)
+(def oled-screen-dimension (list (first oled-dimension) 16.5))
+(def oled-screen-height 2)
+(def oled-display-holes (oled-screws-gen 3 (inc oled-pcb-height) -0.5))
+(def oled-display (oled-place (color [1 1 1]
+                      (translate [0 0 (- oled-thickness)] (union
+                        (difference
+                          (translate [0 0 (/ oled-pcb-height 2)] (cube (first oled-dimension) (second oled-dimension) oled-pcb-height))
+                          oled-display-holes
+                        )
+                        (translate [0 0.5 (+ oled-pcb-height (/ oled-screen-height 2))] 
+                                   (cube (first oled-screen-dimension) (second oled-screen-dimension) oled-screen-height)))))))
 ;;;;;;;;;;
 ;; Case ;;
 ;;;;;;;;;;
@@ -1073,54 +1161,7 @@
    (wall-brace cfthumb-mr-place  0 -1.15 web-post-bl cfthumb-br-place  0 -1 web-post-br)
    (wall-brace cfthumb-bl-place -1  0 web-post-bl cfthumb-br-place -1  0 web-post-tl)
    (wall-brace cfthumb-tr-place  0 -1 web-post-br (partial key-place (+ innercol-offset 3) lastrow)  0 -1 web-post-bl)
-   ; clunky bit on the top left cfthumb connection  (normal connectors don't work well)
-   (bottom-hull
-    (left-key-place (- cornerrow innercol-offset) -1 (translate (wall-locate2 -1 0) web-post))
-    (left-key-place (- cornerrow innercol-offset) -1 (translate (wall-locate3 -1 0) web-post))
-    (cfthumb-bl-place (translate (wall-locate2 -0.3 1) thumb-post-tr))
-    (cfthumb-bl-place (translate (wall-locate3 -0.3 1) thumb-post-tr)))
-   (hull
-    (left-key-place (- cornerrow innercol-offset) -1 (translate (wall-locate2 -1 0) web-post))
-    (left-key-place (- cornerrow innercol-offset) -1 (translate (wall-locate3 -1 0) web-post))
-    (cfthumb-bl-place (translate (wall-locate2 -0.3 1) thumb-post-tr))
-    (cfthumb-bl-place (translate (wall-locate3 -0.3 1) thumb-post-tr))
-    (cfthumb-ml-place thumb-post-tl))
-   (hull
-    (left-key-place (- cornerrow innercol-offset) -1 web-post)
-    (left-key-place (- cornerrow innercol-offset) -1 (translate (wall-locate1 -1 0) web-post))
-    (left-key-place (- cornerrow innercol-offset) -1 (translate (wall-locate2 -1 0) web-post))
-    (left-key-place (- cornerrow innercol-offset) -1 (translate (wall-locate3 -1 0) web-post))
-    (cfthumb-ml-place thumb-post-tl))
-   (hull
-    (left-key-place (- cornerrow innercol-offset) -1 web-post)
-    (left-key-place (- cornerrow innercol-offset) -1 (translate (wall-locate1 -1 0) web-post))
-    (key-place 0 (- cornerrow innercol-offset) web-post-bl)
-    (cfthumb-ml-place thumb-post-tl))
-   (hull
-    (cfthumb-bl-place thumb-post-tr)
-    (cfthumb-bl-place (translate (wall-locate1 -0.3 1) thumb-post-tr))
-    (cfthumb-bl-place (translate (wall-locate2 -0.3 1) thumb-post-tr))
-    (cfthumb-bl-place (translate (wall-locate3 -0.3 1) thumb-post-tr))
-    (cfthumb-ml-place thumb-post-tl))
-   ; connectors below the inner column to the thumb & second column
-   (if inner-column
-     (union
-      (hull
-       (key-place 0 (dec cornerrow) web-post-bl)
-       (key-place 0 (dec cornerrow) web-post-br)
-       (key-place 0 cornerrow web-post-tr))
-      (hull
-       (key-place 0 cornerrow web-post-tr)
-       (key-place 1 cornerrow web-post-tl)
-       (key-place 1 cornerrow web-post-bl))
-      (hull
-       (key-place 0 (dec cornerrow) web-post-bl)
-       (key-place 0 cornerrow web-post-tr)
-       (key-place 1 cornerrow web-post-bl))
-      (hull
-       (key-place 0 (dec cornerrow) web-post-bl)
-       (key-place 1 cornerrow web-post-bl)
-       (cfthumb-ml-place thumb-post-tl))))))
+   ))
 
 (def mini-thumb-wall
   (union
@@ -1193,7 +1234,7 @@
    (wall-brace thumb-mr-place  0 -1 web-post-br thumb-tr-place  0 -1 thumb-post-br)
    (wall-brace thumb-mr-place  0 -1 web-post-br thumb-mr-place  0 -1 web-post-bl)
    (wall-brace thumb-br-place  0 -1 web-post-br thumb-br-place  0 -1 web-post-bl)
-   (wall-brace thumb-ml-place -0.3  1 web-post-tr thumb-ml-place  0  1 web-post-tl)
+   ;(color [0 1 1] (wall-brace thumb-ml-place -0.3  1 web-post-tr thumb-ml-place  0  1 web-post-tl))
    (wall-brace thumb-bl-place  0  1 web-post-tr thumb-bl-place  0  1 web-post-tl)
    (wall-brace thumb-br-place -1  0 web-post-tl thumb-br-place -1  0 web-post-bl)
    (wall-brace thumb-bl-place -1  0 web-post-tl thumb-bl-place -1  0 web-post-bl)
@@ -1201,59 +1242,104 @@
    (wall-brace thumb-br-place -1  0 web-post-bl thumb-br-place  0 -1 web-post-bl)
    (wall-brace thumb-bl-place -1  0 web-post-tl thumb-bl-place  0  1 web-post-tl)
    ; thumb tweeners
-   (wall-brace thumb-mr-place  0 -1 web-post-bl thumb-br-place  0 -1 web-post-br)
+   (color [0 1 0 ] (wall-brace thumb-mr-place  0 -1 web-post-bl thumb-br-place  0 -1 web-post-br)
    (wall-brace thumb-ml-place  0  1 web-post-tl thumb-bl-place  0  1 web-post-tr)
    (wall-brace thumb-bl-place -1  0 web-post-bl thumb-br-place -1  0 web-post-tl)
-   (wall-brace thumb-tr-place  0 -1 thumb-post-br (partial key-place (+ innercol-offset 3) lastrow)  0 -1 web-post-bl)
+   (wall-brace thumb-tr-place  0 -1 thumb-post-br (partial key-place (+ innercol-offset 3) lastrow)  0 -1 web-post-bl))
    ; clunky bit on the top left thumb connection  (normal connectors don't work well)
-   (bottom-hull
-    (left-key-place (- cornerrow innercol-offset) -1 (translate (wall-locate2 -1 0) web-post))
-    (left-key-place (- cornerrow innercol-offset) -1 (translate (wall-locate3 -1 0) web-post))
-    (thumb-ml-place (translate (wall-locate2 -0.3 1) web-post-tr))
-    (thumb-ml-place (translate (wall-locate3 -0.3 1) web-post-tr)))
-   (hull
-    (left-key-place (- cornerrow innercol-offset) -1 (translate (wall-locate2 -1 0) web-post))
-    (left-key-place (- cornerrow innercol-offset) -1 (translate (wall-locate3 -1 0) web-post))
-    (thumb-ml-place (translate (wall-locate2 -0.3 1) web-post-tr))
-    (thumb-ml-place (translate (wall-locate3 -0.3 1) web-post-tr))
-    (thumb-tl-place thumb-post-tl))
-   (hull
-    (left-key-place (- cornerrow innercol-offset) -1 web-post)
-    (left-key-place (- cornerrow innercol-offset) -1 (translate (wall-locate1 -1 0) web-post))
-    (left-key-place (- cornerrow innercol-offset) -1 (translate (wall-locate2 -1 0) web-post))
-    (left-key-place (- cornerrow innercol-offset) -1 (translate (wall-locate3 -1 0) web-post))
-    (thumb-tl-place thumb-post-tl))
-   (hull
-    (left-key-place (- cornerrow innercol-offset) -1 web-post)
-    (left-key-place (- cornerrow innercol-offset) -1 (translate (wall-locate1 -1 0) web-post))
-    (key-place 0 (- cornerrow innercol-offset) web-post-bl)
-    (key-place 0 (- cornerrow innercol-offset) (translate (wall-locate1 0 0) web-post-bl))
-    (thumb-tl-place thumb-post-tl))
-   ; connectors below the inner column to the thumb & second column
-   (if inner-column
-     (union
-      (hull
-       (key-place 0 (dec cornerrow) web-post-bl)
-       (key-place 0 (dec cornerrow) web-post-br)
-       (key-place 0 cornerrow web-post-tr))
-      (hull
-       (key-place 0 cornerrow web-post-tr)
-       (key-place 1 cornerrow web-post-tl)
-       (key-place 1 cornerrow web-post-bl))
-      (hull
-       (key-place 0 (dec cornerrow) web-post-bl)
-       (key-place 0 cornerrow web-post-tr)
-       (key-place 1 cornerrow web-post-bl))
-      (hull
-       (key-place 0 (dec cornerrow) web-post-bl)
-       (key-place 1 cornerrow web-post-bl)
-       (thumb-tl-place thumb-post-tl))))
    (hull
     (thumb-ml-place web-post-tr)
-    (thumb-ml-place (translate (wall-locate1 -0.3 1) web-post-tr))
-    (thumb-ml-place (translate (wall-locate2 -0.3 1) web-post-tr))
-    (thumb-ml-place (translate (wall-locate3 -0.3 1) web-post-tr))
+    (oled-place web-post-oled-br)
     (thumb-tl-place thumb-post-tl))))
+
+
+(def oled-wall (union oled 
+                      (union
+      (color [1 0 0] (hull
+       (oled-place web-post-oled-tl)
+       (key-place 0 (dec cornerrow) web-post-br)
+       (key-place 0 (dec cornerrow) web-post-bl)
+       (key-place 0 cornerrow web-post-tr)))
+      (color [0 1 0] (hull
+       (key-place 0 cornerrow web-post-tr)
+       (key-place 1 cornerrow web-post-tl)
+       (key-place 1 cornerrow web-post-bl)
+       (oled-place web-post-oled-tr)
+        
+       ))
+      (color [0 0 1] (hull
+        (oled-place web-post-oled-tl)
+       (key-place 0 cornerrow web-post-tr)
+       (oled-place web-post-oled-tr)))
+      (color [1 1 0] (hull
+       (oled-place web-post-oled-tr)
+       (oled-place web-post-oled-br)
+       (key-place 1 cornerrow web-post-bl)
+       (thumb-tl-place thumb-post-tl))))
+  (color [0 1 1] 
+    (hull
+      (thumb-ml-place web-post-tr)
+      (thumb-ml-place (translate (wall-locate1 0 1 ) web-post-tl))
+      (thumb-ml-place (translate (wall-locate2 0 1 ) web-post-tl))
+      (thumb-ml-place (translate (wall-locate3 0 1 ) web-post-tl))
+      (thumb-ml-place web-post-tl)
+      (oled-place web-post-oled-br) 
+    )
+         
+    (bottom-hull
+      (thumb-ml-place (translate (wall-locate2 0 1 ) web-post-tl))
+      (thumb-ml-place (translate (wall-locate3 0 1 ) web-post-tl))
+      (oled-place web-post-oled-br) 
+    )
+
+  )
+
+    (bottom-hull
+    (oled-place web-post-oled-br)
+    (oled-place web-post-oled-bl))
+    (bottom-hull
+      (oled-place web-post-oled-bl)
+      (left-key-place (- cornerrow innercol-offset) -1 (translate (wall-locate2 -1 0) web-post))
+      (left-key-place (- cornerrow innercol-offset) -1 (translate (wall-locate3 -1 0) web-post))
+    )
+   (color [1 1 0] (hull
+    (left-key-place (- cornerrow innercol-offset) -1 web-post)
+    (left-key-place (- cornerrow innercol-offset) -1 (translate (wall-locate2 -1 0) web-post))
+    (left-key-place (- cornerrow innercol-offset) -1 (translate (wall-locate3 -1 0) web-post))
+    (oled-place web-post-oled-tl)
+    (oled-place web-post-oled-bl)))
+   (color [0 1 0] (hull
+    (left-key-place (- cornerrow innercol-offset) -1 web-post)
+    (left-key-place (- cornerrow innercol-offset) -1 (translate (wall-locate1 -1 0) web-post))
+    (left-key-place (- cornerrow innercol-offset) -1 (translate (wall-locate2 -1 0) web-post))
+    (left-key-place (- cornerrow innercol-offset) -1 (translate (wall-locate3 -1 0) web-post))
+    (oled-place web-post-oled-tl)
+    (oled-place web-post-oled-bl)
+    ))
+   (hull 
+         (left-key-place (- cornerrow innercol-offset) -1 (translate (wall-locate1 -1 0) web-post))
+       (oled-place web-post-oled-tl)
+       (key-place 0 (dec cornerrow) web-post-bl)
+         
+         )
+   ; connectors below the inner column to the thumb & second column
+ ))
+
+
+(defn highlight [obj]
+  (->> obj
+    (color [0.5 0.1 0.1])
+    (scale [3 3 3])
+  )
+)
+(union 
+    oled-wall
+    (left-key-place (- cornerrow innercol-offset) -1 (highlight web-post))
+    (left-key-place (- cornerrow innercol-offset) -1 (translate (wall-locate1 -1 0) (highlight web-post)))
+    (left-key-place (- cornerrow innercol-offset) -1 (translate (wall-locate2 -1 0) (highlight web-post)))
+    (left-key-place (- cornerrow innercol-offset) -1 (translate (wall-locate3 -1 0) (highlight web-post)))
+)
+
 
 ;switching walls depending on thumb-style used
 (def thumb-wall-type
@@ -1306,9 +1392,46 @@
     5 0
     6 -5.07))
 
+(def rj9-start  (map + [3 -3  0] (key-position 0 0 (map + (wall-locate3 0 1) [0 (/ mount-height  2) 0]))))
+(def rj9-position  [(first rj9-start) (second rj9-start) 11])
+(def rj9-cube   (cube 14.78 13 22.38))
+(def rj9-space  (translate rj9-position rj9-cube))
+(def rj9-holder (translate rj9-position
+                  (difference rj9-cube
+                              (union (translate [0 2 0] (cube 10.78  9 18.38))
+                                     (translate [0 0 5] (cube 10.78 13  5))))))
+
+(def gx16-start  (map + [7 -3  0] (key-position 0 0 (map + (wall-locate3 0 1) [0 (* (/ mount-height  3) 2) 0]))))
+(def gx16-position  [(first gx16-start) (second gx16-start) 32])
+
+(def gx16-hole-cylinder (->> (cylinder 8.50 30)
+			     (rotate (/ π 2) [1 0 0] )
+			     (translate gx16-position)))
+
+(def gx16-holder (->> (difference (cylinder 12.5 6) (cylinder 9.75 10))	
+	(rotate (/ π 2) [1 0 0]) 
+	(translate gx16-position)))
+
+
+
+(def usb-port-height 3)
+(def usb-port-start (map + [8 -4  0] (key-position 0 0 (map + (wall-locate3 0 1) [0 (* (/ mount-height  3) 2) 0]))))
+(def usb-port-size [17 6.5 11.5])
+(def usb-port-position [(first usb-port-start) (second usb-port-start) (+ (/ (last usb-port-size) 2) usb-port-height)])
+;(def usb-port-position gx16-position); (map + [1.5 0 0] (key-position 1 0 (map + (wall-locate2 0 1) [0 (/ mount-height 2) 0]))))
+(def usb-port-thickness 5)
+(def usb-port
+    (->> (cube (+ (first usb-port-size) usb-port-thickness) (second usb-port-size) (+ (last usb-port-size) usb-port-thickness))
+         (translate usb-port-position)))
+(def usb-port-hole
+    (->> (apply cube usb-port-size)
+         (translate usb-port-position)))
 ; Cutout for controller/trrs jack holder
 (def usb-holder-ref (key-position 0 0 (map - (wall-locate2  0  -1) [0 (/ mount-height 2) 0])))
 (def usb-holder-position (map + [(+ 18.8 holder-offset) 18.7 1.3] [(first usb-holder-ref) (second usb-holder-ref) 2]))
+(prn usb-holder-position)
+
+
 (def usb-holder-cube   (cube 28.666 30 19.8))
 (def usb-holder-space  (translate (map + usb-holder-position [-1.5 (* -1 wall-thickness) 6.6]) usb-holder-cube))
 (def usb-holder-notch  (translate (map + usb-holder-position [-1.5 (+ 4.4 notch-offset) 6.6]) (cube 31.366 1.3 19.8)))
@@ -1317,7 +1440,9 @@
 (defn screw-insert-shape [bottom-radius top-radius height]
   (union
    (->> (binding [*fn* 30]
-                 (cylinder [bottom-radius top-radius] height)))))
+                 (cylinder [bottom-radius top-radius] height)))
+  )
+)
 
 (defn screw-insert [column row bottom-radius top-radius height offset]
   (let [shift-right   (= column lastcol)
@@ -1330,6 +1455,35 @@
                             (key-position column row (map + (wall-locate2  1  0) [(/ mount-width 2) 0 0])))))]
     (->> (screw-insert-shape bottom-radius top-radius height)
          (translate (map + offset [(first position) (second position) (/ height 2)])))))
+
+(defn usb-port-screw [delta] 
+	(->> (difference (screw-insert-shape 3.65 3.65 4) (screw-insert-shape 2 2 4))
+			(rotate (/ π 2) [1 0 0])
+			(translate [(+ (first usb-port-position) delta)  (+ (second usb-port-position) -4) (last usb-port-position)])
+	)
+)
+(def usb-port-up-screw (usb-port-screw 12.5)) 
+(def usb-port-down-screw (usb-port-screw -12.5)) 
+
+(def board-support-start (key-position 1 centerrow (wall-locate3 -1 0))) ; (key-position 0 1 (wall-locate3 0 1)))
+(def board-support-position [(first board-support-start) (second board-support-start) (+ 3 2)])
+(defn board-support-screw [dy dx]
+	(->> (difference (screw-insert-shape 3.65 3.65 6) (screw-insert-shape 2 2 6))
+		(rotate (/ π 2) [0 0 0])
+    (translate [(+ (first board-support-position) dx) (+ (second board-support-position) dy) (+ (last board-support-position) 0)])
+	)
+)
+
+(def board-support-screws (map #(board-support-screw (first %) (second %)) [[-20 0] [20 -11] [20 11]]))
+
+(def button-radius 2)
+(def reset-hole-start (key-position 2 0 (wall-locate3 0 1)))
+(def reset-hole-position [(+ (first reset-hole-start) 2)(second reset-hole-start) 10])
+(def reset-hole (->> (cylinder [button-radius button-radius] 32)
+                     (with-fn 100)
+                     (rotate (/ π 2) [1 0 0])
+                     (translate reset-hole-position)))
+
 
 ; Offsets for the screw inserts dependent on extra-row & pinky-15u
 (when (and pinky-15u extra-row)
@@ -1373,7 +1527,7 @@
          (screw-insert (+ 1 innercol-offset) lastrow         bottom-radius top-radius height screw-offset-bm)))
 
 ; Hole Depth Y: 4.4
-(def screw-insert-height 6)
+(def screw-insert-height 8)
 
 ; Hole Diameter C: 4.1-4.4
 (def screw-insert-bottom-radius (/ 4.0 2))
@@ -1426,6 +1580,8 @@
                (key-place lastcol (inc row) web-post-tr))))
 ))))
 
+(def usb-holder-hole (union usb-holder-space usb-holder-notch))
+
 (def model-right (difference
                    (union
                      key-holes
@@ -1436,13 +1592,27 @@
                      inner-connectors
                      thumb-type
                      thumb-connector-type
+                     gx16-holder
+                     usb-port-up-screw
+                     usb-port-down-screw
+                     oled-wall
+                     
+           ;rj9-holder
                      (difference (union case-walls
-                                        screw-insert-outers)
-                                 usb-holder-space
-                                 usb-holder-notch
-                                 screw-insert-holes))
-                   (translate [0 0 -20] (cube 350 350 40))))
+                        screw-insert-outers)	
+			      ;rj9-space 
+                     usb-port-hole
+                     reset-hole
+                     screw-insert-holes 
+			               gx16-hole-cylinder
+			               (if (not removable-usb-support?) usb-holder-hole)))
+                        (translate [0 0 -20] (cube 350 350 40))))
 
+
+; Oled intersection test
+;(color [1 0 0] (intersection model-right oled-display))
+
+(spit "things/test.scad" (write-scad board-support-screws))
 (spit "things/right.scad"
       (write-scad model-right))
 
@@ -1453,9 +1623,7 @@
       (write-scad (union model-right
                          thumbcaps-type
                          caps)))
-
-(spit "things/right-plate.scad"
-      (write-scad
+(def right-plate-model (union
         (extrude-linear
           {:height 2.6 :center false}
           (project
@@ -1472,8 +1640,17 @@
                 case-walls
                 thumbcaps-fill-type
                 caps-fill
+                oled-wall
+                oled-fill
                 screw-insert-outers)
-              (translate [0 0 -10] screw-insert-screw-holes))))))
+              (translate [0 0 -10] screw-insert-screw-holes))))
+        board-support-screws
+        )
+)
+(spit "things/right-plate.scad"
+      (write-scad right-plate-model
+        ))
+(spit "things/left-plate.scad" (write-scad (mirror [-1 0 0] right-plate-model)))
 
 (spit "things/right-plate-laser.scad"
       (write-scad
@@ -1484,3 +1661,10 @@
                                (translate [0 0 -10] screw-insert-screw-holes))))))
 
 (defn -main [dum] 1)  ; dummy to make it easier to batch
+
+
+(defn idem [angle obj] obj)
+
+(prn "Done evaluating")
+
+
